@@ -17,3 +17,6 @@ env/
 # ── OS junk ──────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# Local release link cache
+release_links.txt

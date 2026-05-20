@@ -485,6 +485,8 @@ def main():
         "MANGADEX": md_url,
         "MANGATARO": mt_url
     }
+    save_release_links(links)
+    print(color_text("Saved release links to release_links.txt", COLOR_PROMPT))
     
     if not post_title:
         print(color_text("WordPress post title is blank; skipping WordPress post/page update.", COLOR_WORDPRESS))
