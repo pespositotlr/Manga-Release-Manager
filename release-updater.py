@@ -48,7 +48,7 @@ def get_cubari_url(series_name, chapter_number, config):
     if series_name in config:
         # Access the 'cubari_base' key directly from the config
         base_url = config[series_name]["cubari_base"]
-        ch_str = str(chapter_number).zfill(3) 
+        ch_str = format_chapter(chapter_number)
         return f"{base_url}{ch_str}/1/"
     return None
     
@@ -71,7 +71,7 @@ def find_target_folder(base_folder, chapter, volume):
     Finds a folder matching "V{volume} Ch{chapter}" or just "Ch{chapter}".
     """
     # Pad chapter to 3 digits (e.g., 36 -> 036)
-    ch_str = str(chapter).zfill(3)
+    ch_str = format_chapter(chapter)
     
     # Construct regex:
     # Optional V##, then Ch###, then anything else
@@ -116,12 +116,16 @@ def run_cmd_silent(cmd, cwd=None):
         # We still return False so you know if it actually crashed
         return False
 
-
 def color_text(text, color):
     if not USE_COLOR:
         return text
     return f"{color}{text}{COLOR_RESET}"
 
+def format_chapter(chapter_str):
+    """Pads chapter number for folder/URL matching. Handles decimals like 36.5 → 036.5"""
+    parts = str(chapter_str).split(".")
+    parts[0] = parts[0].zfill(3)
+    return ".".join(parts)    
 
 def wait_until_scheduled(scheduled_time_str):
     """
@@ -249,7 +253,7 @@ def extract_title(folder_name):
     if match:
         return match.group(1).strip()
     return None # Return None if no pattern matches
-    
+
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Release updater with optional scheduled uploads")
@@ -353,7 +357,11 @@ def main():
         if catbox_result.stderr:
             print(color_text("Catbox stderr:", COLOR_CATBOX))
             print(color_text(catbox_result.stderr.strip(), COLOR_CATBOX))
+        if catbox_result.returncode != 0:
+            print(color_text("⚠️ Catbox upload failed (non-zero exit code). URL will be empty.", COLOR_CATBOX))
         catbox_url = normalize_url(catbox_result.stdout)
+        if not catbox_url:
+            print(color_text("⚠️ Catbox upload returned no valid URL.", COLOR_CATBOX))
     else:
         print(color_text("Skipping Catbox upload.", COLOR_CATBOX))
         catbox_url = ""
@@ -450,8 +458,7 @@ def main():
             cmd,
             cwd=uploader_locations["mangadex_uploader"],
             input_data="y\n",
-            env=env,
-            shell=True
+            env=env
         )
 
         print(color_text(f"MangaDex: Return Code: {result.returncode}", COLOR_MANGADEX))
@@ -524,6 +531,7 @@ def main():
     print(color_text("Updating WordPress post...", COLOR_WORDPRESS))
     
     # You need to setup an SSH key and config for passwordless access to the server for this to work.
+    # Note this updates all URLs in the post content that match the platforms. Also this applies to drafts as well as published posts.
     # 1. Prepare the remote script as a simple string
     remote_script = f"""
       cd public_html
