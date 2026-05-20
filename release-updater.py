@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 import json
 import os
 import sys
@@ -232,6 +232,12 @@ def extract_url(raw: str) -> str:
     match = re.search(r'https?://\S+', raw)
     return match.group(0).strip() if match else raw.strip()
     
+def normalize_url(raw: str) -> str:
+    url = extract_url(raw or "")
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return ""
+    
 def extract_title(folder_name):
     # Pattern explanation:
     # (V\d+\s+)?      -> Optional: 'V' followed by digits and space
@@ -248,7 +254,15 @@ def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Release updater with optional scheduled uploads")
     parser.add_argument("--schedule", type=str, help="Schedule uploads for a specific time (format: YYYY-MM-DD HH:MM:SS)")
+    parser.add_argument(
+        "--skip",
+        nargs="+",
+        type=str.lower,
+        choices=["catbox", "mega", "cubari", "mangadex", "mangataro"],
+        help="Upload targets to skip"
+    )
     args = parser.parse_args()
+    skip_targets = set(args.skip or [])
     
     # 1. Inputs
     post_title = input(color_text("Enter WordPress Post Title: ", COLOR_PROMPT)).strip()
@@ -331,140 +345,155 @@ def main():
         wait_until_scheduled(args.schedule)
         
     # 5. CATBOX
-    print(color_text("Uploading to Catbox...", COLOR_CATBOX))
-    catbox_result = run_cmd_capture(f'catbox "{file_path}" --userhash {CATBOX_USERHASH}')
-    print(color_text("Catbox stdout:", COLOR_CATBOX))
-    print(color_text(catbox_result.stdout.strip(), COLOR_CATBOX))
-    if catbox_result.stderr:
-        print(color_text("Catbox stderr:", COLOR_CATBOX))
-        print(color_text(catbox_result.stderr.strip(), COLOR_CATBOX))
-    catbox_url = extract_url(catbox_result.stdout)
+    if "catbox" not in skip_targets:
+        print(color_text("Uploading to Catbox...", COLOR_CATBOX))
+        catbox_result = run_cmd_capture(f'catbox "{file_path}" --userhash {CATBOX_USERHASH}')
+        print(color_text("Catbox stdout:", COLOR_CATBOX))
+        print(color_text(catbox_result.stdout.strip(), COLOR_CATBOX))
+        if catbox_result.stderr:
+            print(color_text("Catbox stderr:", COLOR_CATBOX))
+            print(color_text(catbox_result.stderr.strip(), COLOR_CATBOX))
+        catbox_url = normalize_url(catbox_result.stdout)
+    else:
+        print(color_text("Skipping Catbox upload.", COLOR_CATBOX))
+        catbox_url = ""
     print(boxed_url("Catbox", catbox_url, COLOR_CATBOX))
 
     # 6. MEGA
-    print(color_text("Uploading to Mega...", COLOR_MEGA))
-    filename = os.path.basename(file_path)
-    check_login = run_cmd_capture("mega-ls")
-    if check_login.returncode != 0:
-        login_result = run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}')
-        print(color_text("Mega login stdout:", COLOR_MEGA))
-        print(color_text(login_result.stdout.strip(), COLOR_MEGA))
-        if login_result.stderr:
-            print(color_text("Mega login stderr:", COLOR_MEGA))
-            print(color_text(login_result.stderr.strip(), COLOR_MEGA))
-    rm_result = run_cmd_capture(f'mega-rm -f "{filename}"')
-    if rm_result.stdout.strip() or rm_result.stderr.strip():
-        print(color_text("Mega remove output:", COLOR_MEGA))
-        print(color_text(rm_result.stdout.strip(), COLOR_MEGA))
-        if rm_result.stderr:
-            print(color_text(rm_result.stderr.strip(), COLOR_MEGA))
-    put_result = run_cmd_capture(f'mega-put "{file_path}"')
-    print(color_text("Mega put stdout:", COLOR_MEGA))
-    print(color_text(put_result.stdout.strip(), COLOR_MEGA))
-    if put_result.stderr:
-        print(color_text("Mega put stderr:", COLOR_MEGA))
-        print(color_text(put_result.stderr.strip(), COLOR_MEGA))
-    mega_export = run_cmd_capture(f'mega-export -a "{filename}"')
-    print(color_text("Mega export stdout:", COLOR_MEGA))
-    print(color_text(mega_export.stdout.strip(), COLOR_MEGA))
-    if mega_export.stderr:
-        print(color_text("Mega export stderr:", COLOR_MEGA))
-        print(color_text(mega_export.stderr.strip(), COLOR_MEGA))
-    if mega_export.stdout:
-        mega_url = mega_export.stdout.split()[-1]
+    if "mega" not in skip_targets:
+        print(color_text("Uploading to Mega...", COLOR_MEGA))
+        filename = os.path.basename(file_path)
+        check_login = run_cmd_capture("mega-ls")
+        if check_login.returncode != 0:
+            login_result = run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}')
+            print(color_text("Mega login stdout:", COLOR_MEGA))
+            print(color_text(login_result.stdout.strip(), COLOR_MEGA))
+            if login_result.stderr:
+                print(color_text("Mega login stderr:", COLOR_MEGA))
+                print(color_text(login_result.stderr.strip(), COLOR_MEGA))
+        rm_result = run_cmd_capture(f'mega-rm -f "{filename}"')
+        if rm_result.stdout.strip() or rm_result.stderr.strip():
+            print(color_text("Mega remove output:", COLOR_MEGA))
+            print(color_text(rm_result.stdout.strip(), COLOR_MEGA))
+            if rm_result.stderr:
+                print(color_text(rm_result.stderr.strip(), COLOR_MEGA))
+        put_result = run_cmd_capture(f'mega-put "{file_path}"')
+        print(color_text("Mega put stdout:", COLOR_MEGA))
+        print(color_text(put_result.stdout.strip(), COLOR_MEGA))
+        if put_result.stderr:
+            print(color_text("Mega put stderr:", COLOR_MEGA))
+            print(color_text(put_result.stderr.strip(), COLOR_MEGA))
+        mega_export = run_cmd_capture(f'mega-export -a "{filename}"')
+        print(color_text("Mega export stdout:", COLOR_MEGA))
+        print(color_text(mega_export.stdout.strip(), COLOR_MEGA))
+        if mega_export.stderr:
+            print(color_text("Mega export stderr:", COLOR_MEGA))
+            print(color_text(mega_export.stderr.strip(), COLOR_MEGA))
+        mega_url = normalize_url(mega_export.stdout)
     else:
+        print(color_text("Skipping Mega upload.", COLOR_MEGA))
         mega_url = ""
     print(boxed_url("Mega", mega_url, COLOR_MEGA))
 
     # 7. CUBARI
-    print(color_text("Running Cubari Auto-Kaguya...", COLOR_CUBARI))
-    if folder_idx:
-        print(color_text(f"Detected folder index: {folder_idx}", COLOR_CUBARI))
-        cmd = f'python auto_kaguya.py --base_folder "{base_path}" --number {folder_idx}'
-        cubari_env = os.environ.copy()
-        cubari_env['PYTHONIOENCODING'] = 'utf-8'
-        cubari_env['PYTHONUTF8'] = '1'
-        cubari_result = run_cmd_capture(
-            cmd,
-            cwd=uploader_locations['auto_kaguya'],
-            input_data="y\n",
-            env=cubari_env,
-            shell=True
-        )
-        print(color_text("Auto-Kaguya stdout:", COLOR_CUBARI))
-        print(color_text(cubari_result.stdout.strip(), COLOR_CUBARI))
-        if cubari_result.stderr:
-            print(color_text("Auto-Kaguya stderr:", COLOR_CUBARI))
-            print(color_text(cubari_result.stderr.strip(), COLOR_CUBARI))
-        if cubari_result.returncode != 0:
-            print(color_text("Warning: Kaguya tool encountered an issue.", COLOR_CUBARI))
+    if "cubari" not in skip_targets:
+        print(color_text("Running Cubari Auto-Kaguya...", COLOR_CUBARI))
+        if folder_idx:
+            print(color_text(f"Detected folder index: {folder_idx}", COLOR_CUBARI))
+            cmd = f'python auto_kaguya.py --base_folder "{base_path}" --number {folder_idx}'
+            cubari_env = os.environ.copy()
+            cubari_env['PYTHONIOENCODING'] = 'utf-8'
+            cubari_env['PYTHONUTF8'] = '1'
+            cubari_result = run_cmd_capture(
+                cmd,
+                cwd=uploader_locations['auto_kaguya'],
+                input_data="y\n",
+                env=cubari_env,
+                shell=True
+            )
+            print(color_text("Auto-Kaguya stdout:", COLOR_CUBARI))
+            print(color_text(cubari_result.stdout.strip(), COLOR_CUBARI))
+            if cubari_result.stderr:
+                print(color_text("Auto-Kaguya stderr:", COLOR_CUBARI))
+                print(color_text(cubari_result.stderr.strip(), COLOR_CUBARI))
+            if cubari_result.returncode != 0:
+                print(color_text("Warning: Kaguya tool encountered an issue.", COLOR_CUBARI))
+        else:
+            print(color_text("Folder not found in directory!", COLOR_CUBARI))
+        cubari_url = get_cubari_url(series, chapter, config)
     else:
-        print(color_text("Folder not found in directory!", COLOR_CUBARI))
-
-    cubari_url = get_cubari_url(series, chapter, config)
+        print(color_text("Skipping Cubari auto-upload.", COLOR_CUBARI))
+        cubari_url = ""
     print(boxed_url("Cubari", cubari_url, COLOR_CUBARI))
 
     # 8. MANGADEX
-    print(color_text("Uploading to Mangadex...", COLOR_MANGADEX))
-    mangadex_cmd = f'py mangadex_uploader.py --series {toml_file} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}"'
-    if volume:
-        mangadex_cmd += f' --volume {volume}'
-    print(color_text(mangadex_cmd, COLOR_MANGADEX))
-    cmd = [
-        "py", "mangadex_uploader.py",
-        "--series", toml_file,
-        "--zip", file_path,
-        "--chapter", str(chapter),
-        "--title", chapter_name
-    ]
-    if volume:
-        cmd.extend(["--volume", str(volume)])
-    
-    env = os.environ.copy()
-    env['PYTHONIOENCODING'] = 'utf-8'
-    
-    result = run_cmd_capture(
-        cmd,
-        cwd=uploader_locations["mangadex_uploader"],
-        input_data="y\n",
-        env=env,
-        shell=True
-    )
+    if "mangadex" not in skip_targets:
+        print(color_text("Uploading to Mangadex...", COLOR_MANGADEX))
+        mangadex_cmd = f'py mangadex_uploader.py --series {toml_file} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}"'
+        if volume:
+            mangadex_cmd += f' --volume {volume}'
+        print(color_text(mangadex_cmd, COLOR_MANGADEX))
+        cmd = [
+            "py", "mangadex_uploader.py",
+            "--series", toml_file,
+            "--zip", file_path,
+            "--chapter", str(chapter),
+            "--title", chapter_name
+        ]
+        if volume:
+            cmd.extend(["--volume", str(volume)])
+        
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+        
+        result = run_cmd_capture(
+            cmd,
+            cwd=uploader_locations["mangadex_uploader"],
+            input_data="y\n",
+            env=env,
+            shell=True
+        )
 
-    print(color_text(f"MangaDex: Return Code: {result.returncode}", COLOR_MANGADEX))
-    print(color_text(f"MangaDex: STDOUT: {result.stdout}", COLOR_MANGADEX))
-    print(color_text(f"MangaDex: STDERR: {result.stderr}", COLOR_MANGADEX))
+        print(color_text(f"MangaDex: Return Code: {result.returncode}", COLOR_MANGADEX))
+        print(color_text(f"MangaDex: STDOUT: {result.stdout}", COLOR_MANGADEX))
+        print(color_text(f"MangaDex: STDERR: {result.stderr}", COLOR_MANGADEX))
 
-    # Extract the URL
-    md_url = ""
-    for line in result.stdout.splitlines():
-        if line.startswith("FINAL_URL:"):
-            md_url = line.split("FINAL_URL:")[1].strip()
-            break
+        # Extract the URL
+        md_url = ""
+        for line in result.stdout.splitlines():
+            if line.startswith("FINAL_URL:"):
+                md_url = normalize_url(line.split("FINAL_URL:")[1].strip())
+                break
+    else:
+        print(color_text("Skipping MangaDex upload.", COLOR_MANGADEX))
+        md_url = ""
     print(boxed_url("MangaDex", md_url, COLOR_MANGADEX))
     
     # 9. MANGATARO
-    print(color_text("Uploading to Mangataro...", COLOR_MANGATARO))
-    # Use f-strings to insert the dynamic series variable
-    mt_cmd = f'python mangataro_uploader.py "{series}" {chapter} "{chapter_name}" "{file_path}"'
-    mt_result = run_cmd_capture(
-        mt_cmd,
-        cwd=uploader_locations['mangataro_uploader'],
-        env=os.environ.copy(),
-        shell=True
-    )
-    print(color_text("Mangataro stdout:", COLOR_MANGATARO))
-    print(color_text(mt_result.stdout.strip(), COLOR_MANGATARO))
-    if mt_result.stderr:
-        print(color_text("Mangataro stderr:", COLOR_MANGATARO))
-        print(color_text(mt_result.stderr.strip(), COLOR_MANGATARO))
+    if "mangataro" not in skip_targets:
+        print(color_text("Uploading to Mangataro...", COLOR_MANGATARO))
+        # Use f-strings to insert the dynamic series variable
+        mt_cmd = f'python mangataro_uploader.py "{series}" {chapter} "{chapter_name}" "{file_path}"'
+        mt_result = run_cmd_capture(
+            mt_cmd,
+            cwd=uploader_locations['mangataro_uploader'],
+            env=os.environ.copy(),
+            shell=True
+        )
+        print(color_text("Mangataro stdout:", COLOR_MANGATARO))
+        print(color_text(mt_result.stdout.strip(), COLOR_MANGATARO))
+        if mt_result.stderr:
+            print(color_text("Mangataro stderr:", COLOR_MANGATARO))
+            print(color_text(mt_result.stderr.strip(), COLOR_MANGATARO))
 
-    if mt_result.stdout and "View here: " in mt_result.stdout:
-        mt_url = mt_result.stdout.split("View here: ")[1].strip()
+        if mt_result.stdout and "View here: " in mt_result.stdout:
+            mt_url = normalize_url(mt_result.stdout.split("View here: ")[1].strip())
+        else:
+            mt_url = ""
     else:
-        mt_url = "Failed to capture URL"
+        print(color_text("Skipping Mangataro upload.", COLOR_MANGATARO))
+        mt_url = ""
 
-    
     print(boxed_section(
         "ALL LINKS",
         [
@@ -517,20 +546,30 @@ def main():
         exit 1
       fi
       
-      # Use sed to update content
-      # We escape the backslashes so the remote shell sees them correctly
-      wp post get $POST_ID --field=content | sed -E "
-        s|href=\\\"[^\\\"]+\\\">Catbox.moe|href=\\\"$CATBOX\\\">Catbox.moe|g;
-        s|href=\\\"[^\\\"]+\\\">Mega|href=\\\"$MEGA\\\">Mega|g;
-        s|href=\\\"[^\\\"]+\\\">Online Reader \\\\(Cubari\\\\)|href=\\\"$CUBARI\\\">Online Reader (Cubari)|g;
-        s|href=\\\"[^\\\"]+\\\">Online Reader \\\\(MangaDex\\\\)|href=\\\"$MANGADEX\\\">Online Reader (MangaDex)|g;
-        s|href=\\\"[^\\\"]+\\\">Online Reader \\\\(MangaTaro\\\\)|href=\\\"$MANGATARO\\\">Online Reader (MangaTaro)|g
-      " | wp post update $POST_ID -
+      content_cmd="wp post get $POST_ID --field=content"
+      if [ -n "$CATBOX" ]; then
+        content_cmd="$content_cmd | sed -E \"s|https?://([^.]+\\.)*catbox\\.moe[^\\\"[:space:]]*|$CATBOX|g\""
+      fi
+      if [ -n "$MEGA" ]; then
+        content_cmd="$content_cmd | sed -E \"s|https?://([^.]+\\.)?mega\\.nz[^\\\"[:space:]]*|$MEGA|g\""
+      fi
+      if [ -n "$CUBARI" ]; then
+        content_cmd="$content_cmd | sed -E \"s|https?://([^.]+\\.)?cubari\\.moe[^\\\"[:space:]]*|$CUBARI|g\""
+      fi
+      if [ -n "$MANGADEX" ]; then
+        content_cmd="$content_cmd | sed -E \"s|https?://([^.]+\\.)?mangadex\\.org[^\\\"[:space:]]*|$MANGADEX|g\""
+      fi
+      if [ -n "$MANGATARO" ]; then
+        content_cmd="$content_cmd | sed -E \"s|https?://([^.]+\\.)?mangataro\\.org[^\\\"[:space:]]*|$MANGATARO|g\""
+      fi
+      eval "$content_cmd | wp post update $POST_ID -"
       echo "REMOTE_POST_UPDATED"
 
-      if [ -n "$PAGE_ID" ]; then
+      if [ -n "$PAGE_ID" ] && [ -n "$MEGA" ]; then
         wp post get $PAGE_ID --field=content | sed -E "s|<a href=\\\"[^\\\"]*\\\">Chapter[[:space:]]*$CHAPTER</a>|<a href=\\\"$MEGA\\\">Chapter $CHAPTER</a>|g" | wp post update $PAGE_ID -
         echo "REMOTE_PAGE_UPDATED"
+      elif [ -n "$PAGE_ID" ]; then
+        echo "Warning: Mega URL not available; release page update skipped."
       else
         echo "Warning: Could not find page with slug '$PAGE_SLUG'"
       fi
@@ -563,14 +602,14 @@ def main():
         if "REMOTE_POST_UPDATED" in stdout:
             print(color_text("✅WordPress NEWS POST update completed.", COLOR_WORDPRESS))
         else:
-            print(color_text("⚠️WordPress NEWS POST update completed, but no remote success marker was found.", COLOR_WORDPRESS))
+            print(color_text("⚠️WordPress NEWS POST update completed, but no remote success marker was found.", COLOR_WORDPRESS))
 
         if "REMOTE_PAGE_UPDATED" in stdout:
             print(color_text("✅WordPress RELEASE PAGE update completed.", COLOR_WORDPRESS))
         elif "Warning: Could not find page with slug" in stdout:
-            print(color_text("⚠️WordPress RELEASE PAGE update skipped: page slug not found.", COLOR_WORDPRESS))
+            print(color_text("❌WordPress RELEASE PAGE update skipped: page slug not found.", COLOR_WORDPRESS))
         else:
-            print(color_text("⚠️WordPress RELEASE PAGE update completed, but no remote marker was found.", COLOR_WORDPRESS))
+            print(color_text("⚠️WordPress RELEASE PAGE update completed, but no remote marker was found.", COLOR_WORDPRESS))
     else:
         print(color_text("WordPress update failed!", COLOR_WORDPRESS))
         print(color_text("WordPress update stderr:", COLOR_WORDPRESS))
