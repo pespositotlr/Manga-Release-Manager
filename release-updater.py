@@ -407,13 +407,17 @@ def main():
         print(color_text("Uploading to Mega...", COLOR_MEGA))
         filename = os.path.basename(file_path)
         check_login = run_cmd_capture("mega-ls")
+        print(color_text("Checking login to Mega...", COLOR_MEGA))
         if check_login.returncode != 0:
+            print(color_text("Not logged in. Logging in...", COLOR_MEGA))
             login_result = run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}')
             print(color_text("Mega login stdout:", COLOR_MEGA))
             print(color_text(login_result.stdout.strip(), COLOR_MEGA))
             if login_result.stderr:
                 print(color_text("Mega login stderr:", COLOR_MEGA))
                 print(color_text(login_result.stderr.strip(), COLOR_MEGA))
+        print(color_text("Logged in.", COLOR_MEGA))
+        print(color_text("Removing old MEGA file...", COLOR_MEGA))
         rm_result = run_cmd_capture(f'mega-rm -f "{filename}"')
         if rm_result.stdout.strip() or rm_result.stderr.strip():
             print(color_text("Mega remove output:", COLOR_MEGA))
