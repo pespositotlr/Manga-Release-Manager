@@ -8,6 +8,7 @@ import shutil
 import zipfile
 import time
 import argparse
+import shutil
 from datetime import datetime
 
 try:
@@ -212,23 +213,27 @@ def boxed_section(title, lines, color):
     return "\n".join(output)
 
 
-def run_cmd_capture(cmd, cwd=None, input_data=None, env=None, shell=True):
+def run_cmd_capture(cmd, cwd=None, input_data=None, env=None, shell=True, timeout=30):
     """Run a command and capture stdout/stderr for debug output."""
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        input=input_data,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        shell=shell,
-        env=env,
-        encoding='utf-8'
-    )
-    return result
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            input=input_data,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=shell,
+            env=env,
+            encoding='utf-8',
+            timeout=timeout
+        )
+        return result
+    except subprocess.TimeoutExpired:
+        print(color_text(f"⚠️ Command timed out after {timeout}s: {cmd}", IMPORTANT_INFO))
+        return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="timeout")
 
-
-def run_cmd_stream(cmd, cwd=None, input_data=None, env=None, shell=True, color=None):
+def run_cmd_stream(cmd, cwd=None, input_data=None, env=None, shell=True, color=None, timeout=300):
     """Run a command and stream stdout/stderr in real time."""
     process = subprocess.Popen(
         cmd,
@@ -253,7 +258,11 @@ def run_cmd_stream(cmd, cwd=None, input_data=None, env=None, shell=True, color=N
             else:
                 print(line, flush=True)
             output_lines.append(line)
-    process.wait()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        print(color_text(f"⚠️ Command timed out after {timeout}s: {cmd}", color or ""))
     result = subprocess.CompletedProcess(
         args=cmd,
         returncode=process.returncode,
@@ -386,44 +395,76 @@ def main():
     # 5. CATBOX
     if "catbox" not in skip_targets:
         print(color_text("Uploading to Catbox...", COLOR_CATBOX))
-        catbox_result = run_cmd_stream(
-            f'catbox "{file_path}" --userhash {CATBOX_USERHASH}',
-            env=os.environ.copy(),
-            shell=True,
-            color=COLOR_CATBOX
-        )
-        if catbox_result.returncode != 0:
-            print(color_text("⚠️ Catbox upload failed (non-zero exit code). URL will be empty.", COLOR_CATBOX))
-        catbox_url = normalize_url(catbox_result.stdout)
+        
+        catbox_url = ""
+        max_attempts = 3
+        retry_delay = 5  # seconds between retries
+        
+        for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                print(color_text(f"Retrying Catbox upload (attempt {attempt}/{max_attempts})...", COLOR_CATBOX))
+                time.sleep(retry_delay)
+            
+            catbox_result = run_cmd_stream(
+                f'catbox "{file_path}" --userhash {CATBOX_USERHASH}',
+                env=os.environ.copy(),
+                shell=True,
+                color=COLOR_CATBOX
+            )
+            
+            if catbox_result.returncode == 0:
+                catbox_url = normalize_url(catbox_result.stdout)
+                if catbox_url:
+                    break  # Success
+                else:
+                    print(color_text("⚠️ Catbox returned exit code 0 but no valid URL.", COLOR_CATBOX))
+            else:
+                print(color_text(f"⚠️ Catbox upload failed (attempt {attempt}/{max_attempts}).", COLOR_CATBOX))
+        
         if not catbox_url:
-            print(color_text("⚠️ Catbox upload returned no valid URL.", COLOR_CATBOX))
+            print(color_text("❌ All Catbox upload attempts failed. URL will be empty.", COLOR_CATBOX))
     else:
         print(color_text("Skipping Catbox upload.", COLOR_CATBOX))
         catbox_url = ""
+
     print(boxed_url("Catbox", catbox_url, COLOR_CATBOX))
 
     # 6. MEGA
     if "mega" not in skip_targets:
         print(color_text("Uploading to Mega...", COLOR_MEGA))
         filename = os.path.basename(file_path)
-        check_login = run_cmd_capture("mega-ls")
-        print(color_text("Checking login to Mega...", COLOR_MEGA))
-        if check_login.returncode != 0:
-            print(color_text("Not logged in. Logging in...", COLOR_MEGA))
-            login_result = run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}')
-            print(color_text("Mega login stdout:", COLOR_MEGA))
-            print(color_text(login_result.stdout.strip(), COLOR_MEGA))
-            if login_result.stderr:
-                print(color_text("Mega login stderr:", COLOR_MEGA))
-                print(color_text(login_result.stderr.strip(), COLOR_MEGA))
-        print(color_text("Logged in.", COLOR_MEGA))
-        print(color_text("Removing old MEGA file...", COLOR_MEGA))
-        rm_result = run_cmd_capture(f'mega-rm -f "{filename}"')
-        if rm_result.stdout.strip() or rm_result.stderr.strip():
-            print(color_text("Mega remove output:", COLOR_MEGA))
-            print(color_text(rm_result.stdout.strip(), COLOR_MEGA))
-            if rm_result.stderr:
-                print(color_text(rm_result.stderr.strip(), COLOR_MEGA))
+
+        # Start the server explicitly
+        print(color_text("Starting MEGAcmd server...", COLOR_MEGA))
+        mega_ls_path = shutil.which("mega-ls")
+        mega_server_exe = os.path.join(os.path.dirname(mega_ls_path), "MEGAcmdServer.exe")
+
+        subprocess.Popen(
+            mega_server_exe,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        # Poll until server is ready
+        print(color_text("Waiting for MEGAcmd server to be ready...", COLOR_MEGA))
+        for attempt in range(24):  # up to 120 seconds
+            whoami = run_cmd_capture("mega-whoami", timeout=10)
+            if whoami.returncode == 0 and whoami.stdout.strip():
+                print(color_text(f"Server ready. Logged in as: {whoami.stdout.strip()}", COLOR_MEGA))
+                break
+            if "Not logged in" in whoami.stdout or "Not logged in" in whoami.stderr:
+                print(color_text("Not logged in. Logging in...", COLOR_MEGA))
+                run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}', timeout=30)
+                break
+            time.sleep(5)
+        else:
+            print(color_text("⚠️ MEGAcmd server did not become ready in time.", COLOR_MEGA))
+
+        print(color_text("Removing old MEGA file (if exists)...", COLOR_MEGA))
+        rm_result = run_cmd_capture(f'mega-rm -f "{filename}"', timeout=30)
+        print(color_text(f"Mega rm stdout: {rm_result.stdout.strip()}", COLOR_MEGA))
+        print(color_text(f"Mega rm stderr: {rm_result.stderr.strip()}", COLOR_MEGA))
+
         print(color_text("Mega put output:", COLOR_MEGA))
         put_result = run_cmd_stream(
             f'mega-put "{file_path}"',
@@ -433,6 +474,7 @@ def main():
         )
         if put_result.returncode != 0:
             print(color_text("Warning: Mega put failed.", COLOR_MEGA))
+
         print(color_text("Mega export output:", COLOR_MEGA))
         mega_export = run_cmd_stream(
             f'mega-export -a "{filename}"',
