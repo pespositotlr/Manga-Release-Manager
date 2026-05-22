@@ -213,7 +213,7 @@ def boxed_section(title, lines, color):
     return "\n".join(output)
 
 
-def run_cmd_capture(cmd, cwd=None, input_data=None, env=None, shell=True, timeout=30):
+def run_cmd_capture(cmd, cwd=None, input_data=None, env=None, shell=True, color=None, timeout=30):
     """Run a command and capture stdout/stderr for debug output."""
     try:
         result = subprocess.run(
@@ -228,6 +228,8 @@ def run_cmd_capture(cmd, cwd=None, input_data=None, env=None, shell=True, timeou
             encoding='utf-8',
             timeout=timeout
         )
+        if color and result.stdout.strip():
+            print(color_text(result.stdout.strip(), color))
         return result
     except subprocess.TimeoutExpired:
         print(color_text(f"⚠️ Command timed out after {timeout}s: {cmd}", IMPORTANT_INFO))
@@ -309,15 +311,20 @@ def main():
         choices=["catbox", "mega", "cubari", "mangadex", "mangataro"],
         help="Upload targets to skip"
     )
+    parser.add_argument("--post-title", type=str, help="WordPress Post Title")
+    parser.add_argument("--file", type=str, help="Full Path to Zip")
+    parser.add_argument("--chapter", type=str, help="Chapter Number")
+    parser.add_argument("--volume", type=str, default="", help="Volume Number (optional)")
+    parser.add_argument("--chapter-name", type=str, default="", help="Chapter Name")
     args = parser.parse_args()
     skip_targets = set(args.skip or [])
     
     # 1. Inputs
-    post_title = input(color_text("Enter WordPress Post Title: ", COLOR_PROMPT)).strip()
-    file_path = input(color_text("Enter Full Path to Zip: ", COLOR_PROMPT))
-    chapter = input(color_text("Enter Chapter Number: ", COLOR_PROMPT))
-    volume = input(color_text("Enter Volume Number (optional): ", COLOR_PROMPT))
-    chapter_name = input(color_text("Enter Chapter Name (leave blank to auto-fetch): ", COLOR_PROMPT)).strip()
+    post_title = args.post_title if args.post_title else input(color_text("Enter WordPress Post Title: ", COLOR_PROMPT)).strip()
+    file_path = args.file if args.file else input(color_text("Enter Full Path to Zip: ", COLOR_PROMPT)).strip()
+    chapter = args.chapter if args.chapter else input(color_text("Enter Chapter Number: ", COLOR_PROMPT)).strip()
+    volume = args.volume if args.volume else input(color_text("Enter Volume Number (optional): ", COLOR_PROMPT)).strip()
+    chapter_name = args.chapter_name if args.chapter_name else input(color_text("Enter Chapter Name (leave blank to auto-fetch): ", COLOR_PROMPT)).strip()
 
     # 2. Setup Configuration
     with open('series_config.json', 'r') as f:
@@ -348,8 +355,19 @@ def main():
     # 3. Find folder dynamically
     target_folder = find_target_folder(base_path, chapter, volume)
     if not target_folder:
-        print(color_text(f"Error: Could not find a folder matching that chapter/volume.", IMPORTANT_INFO))
-        sys.exit(1)
+    # Build folder name from available info
+        ch_str = format_chapter(chapter)
+        parts = []
+        if volume:
+            vol_str = str(volume).zfill(2)
+            parts.append(f"V{vol_str}")
+        parts.append(f"Ch{ch_str}")
+        if chapter_name:
+            parts.append(chapter_name)
+        target_folder = " ".join(parts)
+        target_folder_path = os.path.join(base_path, target_folder)
+        print(color_text(f"Folder not found. Creating: {target_folder}", IMPORTANT_INFO))
+        os.makedirs(target_folder_path, exist_ok=True)
     print(color_text(f"Found folder: {target_folder}", IMPORTANT_INFO))
     
     target_path = os.path.join(base_path, target_folder)
@@ -448,20 +466,20 @@ def main():
         # Poll until server is ready
         print(color_text("Waiting for MEGAcmd server to be ready...", COLOR_MEGA))
         for attempt in range(24):  # up to 120 seconds
-            whoami = run_cmd_capture("mega-whoami", timeout=10)
+            whoami = run_cmd_capture("mega-whoami", color=COLOR_MEGA, timeout=10)
             if whoami.returncode == 0 and whoami.stdout.strip():
                 print(color_text(f"Server ready. Logged in as: {whoami.stdout.strip()}", COLOR_MEGA))
                 break
             if "Not logged in" in whoami.stdout or "Not logged in" in whoami.stderr:
                 print(color_text("Not logged in. Logging in...", COLOR_MEGA))
-                run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}', timeout=30)
+                run_cmd_capture(f'mega-login {MEGA_LOGIN} {MEGA_PASS}', color=COLOR_MEGA, timeout=30)
                 break
             time.sleep(5)
         else:
             print(color_text("⚠️ MEGAcmd server did not become ready in time.", COLOR_MEGA))
 
         print(color_text("Removing old MEGA file (if exists)...", COLOR_MEGA))
-        rm_result = run_cmd_capture(f'mega-rm -f "{filename}"', timeout=30)
+        rm_result = run_cmd_capture(f'mega-rm -f "{filename}"', color=COLOR_MEGA, timeout=30)
         print(color_text(f"Mega rm stdout: {rm_result.stdout.strip()}", COLOR_MEGA))
         print(color_text(f"Mega rm stderr: {rm_result.stderr.strip()}", COLOR_MEGA))
 
@@ -485,6 +503,9 @@ def main():
         if mega_export.returncode != 0:
             print(color_text("Warning: Mega export failed.", COLOR_MEGA))
         mega_url = normalize_url(mega_export.stdout)
+        
+        # Clean up MEGAcmd server to free ports
+        run_cmd_capture("mega-quit", timeout=15)
     else:
         print(color_text("Skipping Mega upload.", COLOR_MEGA))
         mega_url = ""
