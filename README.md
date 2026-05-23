@@ -8,12 +8,12 @@ This script acts as an orchestrator around several other tools. You'll need to s
 
 - [**Mangadex-Scheduled-Uploader**](https://github.com/pespositotlr/Mangadex-Scheduled-Uploader) — Handles MangaDex chapter uploads
 - [**Mangataro-Scheduled-Uploader**](https://github.com/pespositotlr/Mangataro-Scheduled-Uploader) — Handles Mangataro chapter uploads
-- [**wotakumoe/kaguya**](https://github.com/wotakumoe/kaguya) — Uploads images to ImageChest for Cubari reader links (see note below)
+- [**Auto-Kaguya**](https://github.com/pespositotlr/auto-kaguya) (Fork of wotakumoe/kaguya) — Uploads images to ImageChest for Cubari reader links (see note below)
 - **catbox CLI** — Must be installed and on your PATH for Catbox uploads
 - **MEGAcmd** — Must be installed and on your PATH for Mega uploads (`mega-login`, `mega-put`, `mega-export`)
 - **WP-CLI** — Must be accessible on your remote server via SSH for WordPress updates
 
-> **Kaguya note:** The script passes `"y\n"` as stdin input to Kaguya so it can proceed through any interactive prompts automatically. If you're using the standard upstream Kaguya, it may still pause for input depending on your version. A locally modified version that skips all prompts will work most reliably.
+> **Kaguya note:** This script is designed to interface with Auto-Kaguya, a custom fork of the [original Kaguya](https://github.com/wotakumoe/kaguya). This fork includes an auto_kaguya.py wrapper that bypasses interactive prompts via a local auto.txt configuration, ensuring the Manga-Release-Manager can proceed through the upload sequence without manual input.
 
 ## Features
 
@@ -181,7 +181,7 @@ The script will prepare everything (extract the ZIP into the Kaguya folder, dete
 6. *(If `--schedule` was passed, waits until the scheduled time with a live countdown)*
 7. Uploads the ZIP to **Catbox.moe** and captures the URL
 8. Uploads the ZIP to **Mega.nz** (logs in if needed, removes any existing file with the same name, uploads, exports a public link)
-9. Runs **Kaguya** (`auto_kaguya.py`) against the updated folder to push pages to ImageChest and update the Cubari gist; constructs the Cubari reader URL from config
+9. Runs **Auto-Kaguya** (`auto_kaguya.py`) against the updated folder to push pages to ImageChest and update the Cubari gist; constructs the Cubari reader URL from config
 10. Runs **Mangadex-Scheduled-Uploader** with the series TOML, ZIP path, chapter number, volume, and title
 11. Runs **Mangataro-Scheduled-Uploader** with the series name, chapter number, title, and ZIP path
 12. Prints a summary box with all five URLs and saves them to `release_links.txt`
