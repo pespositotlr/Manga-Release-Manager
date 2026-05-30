@@ -1,0 +1,25 @@
+{
+  "ssh_settings": {
+    "host": "your.server.ip.or.hostname",
+    "user": "your-ssh-username",
+    "key_path": "C:\\Users\\you\\.ssh\\id_ed25519"
+  },
+  "uploader_locations": {
+    "mangadex_uploader": "C:\\path\\to\\Mangadex-Scheduled-Uploader",
+    "mangataro_uploader": "C:\\path\\to\\Mangataro-Scheduled-Uploader",
+    "mangadot_uploader": "C:\\path\\to\\MangaDot-Uploader",
+    "auto_kaguya": "C:\\path\\to\\auto-kaguya"
+  },
+  "upload_credentials": {
+    "catbox_userhash": "your_catbox_userhash",
+    "mega_login": "you@example.com",
+    "mega_pass": "your_mega_password"
+  },
+  "My Manga Series": {
+    "toml": "my_manga_series.toml",
+    "cubari_base": "https://cubari.moe/read/gist/BASE64GISTID/",
+    "kaguya_folder": "C:\\path\\to\\kaguya\\uploads\\My Manga Series",
+    "downloads_page": "my-manga-series-downloads",
+    "mangadot_manga_id": 12345
+  }
+}
