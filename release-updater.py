@@ -26,6 +26,7 @@ COLOR_MANGADEX = "\033[93m"
 COLOR_PROMPT = "\033[1;32m"
 COLOR_WORDPRESS = "\033[95m"
 COLOR_MANGATARO = "\033[96m"
+COLOR_MANGADOT = "\033[35m"
 IMPORTANT_INFO = "\033[1;96m"
 
 # --- CONFIGURATION ---
@@ -308,7 +309,7 @@ def main():
         "--skip",
         nargs="+",
         type=str.lower,
-        choices=["catbox", "mega", "cubari", "mangadex", "mangataro"],
+        choices=["catbox", "mega", "cubari", "mangadex", "mangadot", "mangataro"],
         help="Upload targets to skip"
     )
     parser.add_argument("--post-title", type=str, help="WordPress Post Title")
@@ -569,7 +570,42 @@ def main():
         print(color_text("Skipping MangaDex upload.", COLOR_MANGADEX))
         md_url = ""
     print(boxed_url("MangaDex", md_url, COLOR_MANGADEX))
-    
+
+    # 8.5. MANGADOT
+    if "mangadot" not in skip_targets:
+        mangadot_id = series_data.get("mangadot_manga_id")
+        if not mangadot_id:
+            print(color_text(f"Skipping Mangadot upload (no mangadot_manga_id in series_config.json for {series}).", COLOR_MANGADOT))
+            mangadot_url = ""
+        else:
+            print(color_text("Uploading to Mangadot...", COLOR_MANGADOT))
+            mangadot_cmd = f'py -u mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}"'
+            if volume:
+                mangadot_cmd += f' --volume {volume}'
+            print(color_text(mangadot_cmd, COLOR_MANGADOT))
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+
+            result = run_cmd_stream(
+                mangadot_cmd,
+                cwd=uploader_locations["mangadot_uploader"],
+                env=env,
+                shell=True,
+                color=COLOR_MANGADOT
+            )
+
+            print(color_text(f"Mangadot: Return Code: {result.returncode}", COLOR_MANGADOT))
+
+            mangadot_url = ""
+            for line in result.stdout.splitlines():
+                if line.startswith("FINAL_URL:"):
+                    mangadot_url = normalize_url(line.split("FINAL_URL:")[1].strip())
+                    break
+    else:
+        print(color_text("Skipping Mangadot upload.", COLOR_MANGADOT))
+        mangadot_url = ""
+    print(boxed_url("Mangadot", mangadot_url, COLOR_MANGADOT))
+
     # 9. MANGATARO
     if "mangataro" not in skip_targets:
         print(color_text("Uploading to Mangataro...", COLOR_MANGATARO))
@@ -608,17 +644,19 @@ def main():
             f"Mega: {mega_url}",
             f"Cubari: {cubari_url}",
             f"MangaDex: {md_url}",
+            f"MangaDot: {mangadot_url}",
             f"MangaTaro: {mt_url}"
         ],
         COLOR_CATBOX
     ))
-    
+
     # Save the links to your local file
     links = {
         "CATBOX": catbox_url,
         "MEGA": mega_url,
         "CUBARI": cubari_url,
         "MANGADEX": md_url,
+        "MANGADOT": mangadot_url,
         "MANGATARO": mt_url
     }
     save_release_links(links)
@@ -641,6 +679,7 @@ def main():
       MEGA="{mega_url}"
       CUBARI="{cubari_url}"
       MANGADEX="{md_url}"
+      MANGADOT="{mangadot_url}"
       MANGATARO="{mt_url}"
       
       POST_TITLE="{post_title}"
@@ -666,6 +705,9 @@ def main():
       fi
       if [ -n "$MANGADEX" ]; then
         content_cmd="$content_cmd | sed -E 's|https?://([^.]+\\.)?mangadex\\.org[^\\"[:space:]]*|'"$MANGADEX"'|g'"
+      fi
+      if [ -n "$MANGADOT" ]; then
+        content_cmd="$content_cmd | sed -E 's|https?://([^.]+\\.)?mangadot\\.net[^\\"[:space:]]*|'"$MANGADOT"'|g'"
       fi
       if [ -n "$MANGATARO" ]; then
         content_cmd="$content_cmd | sed -E 's|https?://([^.]+\\.)?mangataro\\.org[^\\"[:space:]]*|'"$MANGATARO"'|g'"
