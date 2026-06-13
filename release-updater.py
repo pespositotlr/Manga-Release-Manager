@@ -309,7 +309,7 @@ def main():
         "--skip",
         nargs="+",
         type=str.lower,
-        choices=["catbox", "mega", "cubari", "mangadex", "mangadot", "mangataro"],
+        choices=["catbox", "mega", "cubari", "mangadex", "mangadot", "mangataro", "wordpress"],
         help="Upload targets to skip"
     )
     parser.add_argument("--post-title", type=str, help="WordPress Post Title")
@@ -579,7 +579,7 @@ def main():
             mangadot_url = ""
         else:
             print(color_text("Uploading to Mangadot...", COLOR_MANGADOT))
-            mangadot_cmd = f'py -u mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}"'
+            mangadot_cmd = f'py -u mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}" --reupload'
             if volume:
                 mangadot_cmd += f' --volume {volume}'
             print(color_text(mangadot_cmd, COLOR_MANGADOT))
@@ -664,6 +664,9 @@ def main():
     
     if not post_title:
         print(color_text("WordPress post title is blank; skipping WordPress post/page update.", COLOR_WORDPRESS))
+        return
+    elif "wordpress" in skip_targets:    
+        print(color_text("WordPress manually skipped, skipping WordPress post/page update.", COLOR_WORDPRESS))
         return
     
     print(color_text("Updating WordPress post...", COLOR_WORDPRESS))
