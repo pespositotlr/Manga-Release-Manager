@@ -579,7 +579,7 @@ def main():
             mangadot_url = ""
         else:
             print(color_text("Uploading to Mangadot...", COLOR_MANGADOT))
-            mangadot_cmd = f'py -u mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}" --reupload'
+            mangadot_cmd = f'py -3.13 mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}" --reupload --debug_auth'
             if volume:
                 mangadot_cmd += f' --volume {volume}'
             print(color_text(mangadot_cmd, COLOR_MANGADOT))
