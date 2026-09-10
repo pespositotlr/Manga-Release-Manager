@@ -517,7 +517,7 @@ def main():
         print(color_text("Running Cubari Auto-Kaguya...", COLOR_CUBARI))
         if folder_idx:
             print(color_text(f"Detected folder index: {folder_idx}", COLOR_CUBARI))
-            cmd = f'python auto_kaguya.py --base_folder "{base_path}" --number {folder_idx}'
+            cmd = f'py -3.14 auto_kaguya.py --base_folder "{base_path}" --number {folder_idx}'
             cubari_env = os.environ.copy()
             cubari_env['PYTHONIOENCODING'] = 'utf-8'
             cubari_env['PYTHONUTF8'] = '1'
