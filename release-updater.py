@@ -99,8 +99,9 @@ def get_folder_index(base_folder, target_folder_name):
     # 2. Filter for directories only (ignore files)
     dirs = [d for d in all_items if os.path.isdir(os.path.join(base_folder, d))]
     
-    # 3. Sort alphabetically
-    dirs.sort()
+    # 3. Sort alphabetically, ignoring case (the same order Kaguya lists them in;
+    #    a case-sensitive sort picked the wrong chapter)
+    dirs.sort(key=lambda d: d.lower())
     
     # 4. Find the target index (1-based)
     if target_folder_name in dirs:
