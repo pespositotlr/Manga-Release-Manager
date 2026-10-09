@@ -20,3 +20,6 @@ Thumbs.db
 
 # Local release link cache
 release_links.txt
+
+# local backups (may contain credentials)
+*.bak_*

@@ -177,6 +177,35 @@ python release-updater.py --schedule "2026-06-01 12:00:00"
 
 The script will prepare everything (extract the ZIP into the Kaguya folder, detect the series, etc.) immediately, then display a live countdown progress bar and start uploading when the scheduled time arrives.
 
+### Publishing the post
+
+Add `--publish` to publish the WordPress post once its links are in:
+
+```
+python release-updater.py --post-title "Series Volume 1" --file "001.zip" --chapter 1 --publish
+```
+
+Or publish without uploading anything (just `--post-title` and `--publish`, no `--file`). This also works with `--schedule`:
+
+```
+python release-updater.py --post-title "Series Volume 1" --publish
+```
+
+To have WordPress publish it at a set time instead (the same as Publish > Schedule in the editor), use `--schedule-post` with a time in this computer's local time zone. WordPress then puts the post live itself, so nothing needs to keep running:
+
+```
+python release-updater.py --post-title "Series Volume 1" --schedule-post "2026-06-01 11:00:00"
+```
+
+Without `--file`, both only touch WordPress (no uploads, and the Kaguya folder isn't touched).
+
+Safety rules:
+- Nothing is published or scheduled unless `--publish` or `--schedule-post` is passed (only one of them per run).
+- A `--schedule-post` time must be in the future, both on this computer and on the server.
+- Only a **draft** or **pending** post is published (its date is set to now). A post that is already **scheduled** in WordPress is left alone, so it still goes out at its own time. An already published post isn't touched.
+- If no post, or more than one post, has that exact title, nothing is published.
+- With `--file`, the post is only published/scheduled if this run updated its links. Neither option can be combined with `--skip wordpress`.
+
 ## What it does, step by step
 
 1. Reads your inputs and loads `series_config.json`
@@ -193,6 +222,7 @@ The script will prepare everything (extract the ZIP into the Kaguya folder, dete
 12. Runs **Mangataro-Scheduled-Uploader** with the series name, chapter number, title, and ZIP path
 13. Prints a summary box with all six URLs and saves them to `release_links.txt`
 14. SSHes into your WordPress server and updates the news post and downloads page links by matching on URL domain/extension
+15. *(If `--publish` or `--schedule-post` was passed)* publishes or schedules the post if it's a draft or pending (see "Publishing the post")
 
 ## Output
 

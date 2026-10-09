@@ -8,8 +8,9 @@ import shutil
 import zipfile
 import time
 import argparse
+import shlex
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     import colorama
@@ -302,6 +303,124 @@ def extract_title(folder_name):
         return match.group(1).strip()
     return None # Return None if no pattern matches
 
+def parse_post_time(when_str):
+    """
+    Checks a --schedule-post time ("YYYY-MM-DD HH:MM:SS", this computer's local time) and returns it in UTC
+    ("YYYY-MM-DD HH:MM:SS"), or None (with a message) if it is malformed or not in the future.
+    """
+    try:
+        local = datetime.strptime(when_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        print(color_text("Invalid --schedule-post format. Use 'YYYY-MM-DD HH:MM:SS'", IMPORTANT_INFO))
+        return None
+    if local <= datetime.now():
+        print(color_text(f"--schedule-post time {when_str} is in the past.", IMPORTANT_INFO))
+        return None
+    return local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+def publish_post(ssh_cfg, post_title, schedule_gmt=None):
+    """
+    Publishes the WordPress post with this exact title, or with schedule_gmt (UTC "YYYY-MM-DD HH:MM:SS")
+    schedules it the way the WordPress editor does, so WordPress itself publishes it at that time.
+    Only a draft or pending post is changed. A post that is already scheduled (status "future") is left alone,
+    so it still goes out at its own time, and an already published post is not touched.
+    Returns True if the post ends up published (or scheduled, when scheduling).
+    """
+    print(color_text("Scheduling WordPress post..." if schedule_gmt else "Publishing WordPress post...", COLOR_WORDPRESS))
+    if schedule_gmt:
+        # Same as Publish > Schedule in the editor: status "future" with the date set (edit_date stops
+        # WordPress from replacing a draft's date with "now").
+        change = f"""
+          WHEN_GMT={shlex.quote(schedule_gmt)}
+          NOW_GMT=$(wp eval 'echo current_time("mysql", true);')
+          if [[ "$WHEN_GMT" < "$NOW_GMT" ]]; then
+            echo "PUBLISH_PAST $POST_ID"
+            exit 0
+          fi
+          WHEN_LOCAL=$(wp eval "echo get_date_from_gmt('$WHEN_GMT');")
+          wp post update $POST_ID --post_status=future --post_date="$WHEN_LOCAL" --post_date_gmt="$WHEN_GMT" --edit_date=1 >/dev/null
+          echo "PUBLISH_DONE $POST_ID $(wp post get $POST_ID --field=post_status) $(wp post get $POST_ID --field=post_date) (site time)"
+        """
+    else:
+        change = """
+          NOW=$(wp eval 'echo current_time("mysql");')
+          wp post update $POST_ID --post_status=publish --post_date="$NOW" >/dev/null
+          echo "PUBLISH_DONE $POST_ID $(wp post get $POST_ID --field=post_status) $(wp post get $POST_ID --field=url)"
+        """
+    remote_script = f"""
+      cd public_html
+      POST_TITLE={shlex.quote(post_title)}
+      POST_IDS=$(wp post list --post_type=post --post_status=any --title="$POST_TITLE" --format=ids)
+      set -- $POST_IDS
+      if [ "$#" -eq 0 ]; then
+        echo "PUBLISH_NOT_FOUND"
+        exit 0
+      fi
+      if [ "$#" -gt 1 ]; then
+        echo "PUBLISH_MULTIPLE $POST_IDS"
+        exit 0
+      fi
+      POST_ID=$1
+      STATUS=$(wp post get $POST_ID --field=post_status)
+      case "$STATUS" in
+        draft|pending)
+          {change}
+          ;;
+        future)
+          echo "PUBLISH_SCHEDULED $POST_ID $(wp post get $POST_ID --field=post_date)"
+          ;;
+        publish)
+          echo "PUBLISH_ALREADY $POST_ID"
+          ;;
+        *)
+          echo "PUBLISH_OTHER_STATUS $POST_ID $STATUS"
+          ;;
+      esac
+    """
+    clean_script = remote_script.replace('\r', '')
+    ssh_cmd = [
+        "ssh",
+        "-i", ssh_cfg["key_path"],
+        f"{ssh_cfg['user']}@{ssh_cfg['host']}",
+        "/bin/bash -s"
+    ]
+    result = subprocess.run(ssh_cmd, input=clean_script.encode('utf-8'), capture_output=True, text=False)
+    stdout = result.stdout.decode('utf-8', errors='replace') if result.stdout else ""
+    stderr = result.stderr.decode('utf-8', errors='replace') if result.stderr else ""
+    line = next((l for l in stdout.splitlines() if l.startswith("PUBLISH_")), "")
+    parts = line.split()
+
+    if result.returncode != 0 or not line:
+        print(color_text("❌WordPress publish failed!", COLOR_WORDPRESS))
+        print(color_text(stderr.strip(), COLOR_WORDPRESS))
+        return False
+    wanted = "future" if schedule_gmt else "publish"
+    if parts[0] == "PUBLISH_DONE" and len(parts) > 2 and parts[2] == wanted:
+        if schedule_gmt:
+            print(color_text(f"✅WordPress post scheduled (ID {parts[1]}) for {' '.join(parts[3:])}", COLOR_WORDPRESS))
+        else:
+            print(color_text(f"✅WordPress post published (ID {parts[1]}): {' '.join(parts[3:])}", COLOR_WORDPRESS))
+        return True
+    if parts[0] == "PUBLISH_DONE":
+        print(color_text(f"⚠️WordPress post {parts[1]} was updated, but its status is now '{parts[2] if len(parts) > 2 else '?'}', not '{wanted}'.", COLOR_WORDPRESS))
+        return False
+    if parts[0] == "PUBLISH_PAST":
+        print(color_text(f"❌WordPress post {parts[1]}: the schedule time is already past on the server; not changing it.", COLOR_WORDPRESS))
+        return False
+    if parts[0] == "PUBLISH_SCHEDULED":
+        print(color_text(f"WordPress post {parts[1]} is scheduled for {' '.join(parts[2:])}; leaving it scheduled (not publishing now).", COLOR_WORDPRESS))
+        return False
+    if parts[0] == "PUBLISH_ALREADY":
+        print(color_text(f"WordPress post {parts[1]} is already published; nothing to do.", COLOR_WORDPRESS))
+        return True
+    if parts[0] == "PUBLISH_NOT_FOUND":
+        print(color_text(f"❌WordPress publish: no post titled '{post_title}'.", COLOR_WORDPRESS))
+    elif parts[0] == "PUBLISH_MULTIPLE":
+        print(color_text(f"❌WordPress publish: more than one post titled '{post_title}' (IDs {' '.join(parts[1:])}); not publishing any.", COLOR_WORDPRESS))
+    else:
+        print(color_text(f"❌WordPress publish: post {parts[1]} has status '{' '.join(parts[2:])}'; not publishing.", COLOR_WORDPRESS))
+    return False
+
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Release updater with optional scheduled uploads")
@@ -318,9 +437,46 @@ def main():
     parser.add_argument("--chapter", type=str, help="Chapter Number")
     parser.add_argument("--volume", type=str, default="", help="Volume Number (optional)")
     parser.add_argument("--chapter-name", type=str, default="", help="Chapter Name")
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Publish the WordPress post (drafts/pending only; a scheduled post is left alone). "
+             "With --file: after the uploads and link update. Without --file: publish only, no uploads."
+    )
+    parser.add_argument(
+        "--schedule-post",
+        type=str,
+        help="Schedule the WordPress post to go live at this time, like Publish > Schedule in the editor "
+             "(format: YYYY-MM-DD HH:MM:SS, this computer's local time; drafts/pending only). "
+             "With --file: after the uploads and link update. Without --file: WordPress only, no uploads."
+    )
     args = parser.parse_args()
     skip_targets = set(args.skip or [])
-    
+
+    schedule_gmt = None
+    if args.publish and args.schedule_post:
+        print(color_text("Use either --publish or --schedule-post, not both.", IMPORTANT_INFO))
+        sys.exit(1)
+    if args.schedule_post:
+        schedule_gmt = parse_post_time(args.schedule_post)
+        if not schedule_gmt:
+            sys.exit(1)
+    post_action = args.publish or bool(schedule_gmt)
+
+    # Post-only mode: --publish / --schedule-post with a post title and no zip (nothing is uploaded)
+    if post_action and not args.file:
+        if not args.post_title:
+            print(color_text("--publish / --schedule-post without --file needs --post-title.", IMPORTANT_INFO))
+            sys.exit(1)
+        with open('series_config.json', 'r') as f:
+            config = json.load(f)
+        if args.schedule:
+            wait_until_scheduled(args.schedule)
+        sys.exit(0 if publish_post(config["ssh_settings"], args.post_title, schedule_gmt) else 1)
+    if post_action and "wordpress" in skip_targets:
+        print(color_text("--publish / --schedule-post can't be used with --skip wordpress (the post would go out without this line's links).", IMPORTANT_INFO))
+        sys.exit(1)
+
     # 1. Inputs
     post_title = args.post_title if args.post_title else input(color_text("Enter WordPress Post Title: ", COLOR_PROMPT)).strip()
     file_path = args.file if args.file else input(color_text("Enter Full Path to Zip: ", COLOR_PROMPT)).strip()
@@ -768,6 +924,12 @@ def main():
         print(color_text("WordPress update failed!", COLOR_WORDPRESS))
         print(color_text("WordPress update stderr:", COLOR_WORDPRESS))
         print(color_text(stderr.strip(), COLOR_WORDPRESS))
+
+    if post_action:
+        if result.returncode == 0 and "REMOTE_POST_UPDATED" in stdout:
+            publish_post(ssh_cfg, post_title, schedule_gmt)
+        else:
+            print(color_text("Not publishing/scheduling: the post's links weren't updated.", COLOR_WORDPRESS))
 
 if __name__ == "__main__":
     main()
