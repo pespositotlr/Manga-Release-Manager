@@ -674,7 +674,7 @@ def main():
         print(color_text("Running Cubari Auto-Kaguya...", COLOR_CUBARI))
         if folder_idx:
             print(color_text(f"Detected folder index: {folder_idx}", COLOR_CUBARI))
-            cmd = f'py -3.14 auto_kaguya.py --base_folder "{base_path}" --number {folder_idx}'
+            cmd = f'py auto_kaguya.py --base_folder "{base_path}" --number {folder_idx}'
             cubari_env = os.environ.copy()
             cubari_env['PYTHONIOENCODING'] = 'utf-8'
             cubari_env['PYTHONUTF8'] = '1'
@@ -699,7 +699,7 @@ def main():
     # 8. MANGADEX
     if "mangadex" not in skip_targets:
         print(color_text("Uploading to Mangadex...", COLOR_MANGADEX))
-        mangadex_cmd = f'py -3.13 -u mangadex_uploader.py --series {toml_file} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}"'
+        mangadex_cmd = f'py -u mangadex_uploader.py --series {toml_file} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}"'
         if volume:
             mangadex_cmd += f' --volume {volume}'
         print(color_text(mangadex_cmd, COLOR_MANGADEX))
@@ -736,7 +736,7 @@ def main():
             mangadot_url = ""
         else:
             print(color_text("Uploading to Mangadot...", COLOR_MANGADOT))
-            mangadot_cmd = f'py -3.13 mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}" --reupload'
+            mangadot_cmd = f'py mangadot-upload.py --manga {mangadot_id} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}" --reupload'
             if volume:
                 mangadot_cmd += f' --volume {volume}'
             print(color_text(mangadot_cmd, COLOR_MANGADOT))
@@ -767,7 +767,7 @@ def main():
     if "mangataro" not in skip_targets:
         print(color_text("Uploading to Mangataro...", COLOR_MANGATARO))
         # Use f-strings to insert the dynamic series variable
-        mt_cmd = f'py -3.13 -u mangataro_uploader.py "{series}" {chapter} "{chapter_name}" "{file_path}"'
+        mt_cmd = f'py -u mangataro_uploader.py "{series}" {chapter} "{chapter_name}" "{file_path}"'
         mt_result = run_cmd_stream(
             mt_cmd,
             cwd=uploader_locations['mangataro_uploader'],
