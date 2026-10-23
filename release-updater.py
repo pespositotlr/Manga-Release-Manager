@@ -916,6 +916,11 @@ def main():
         content_cmd="$content_cmd | sed -E 's|https?://([^.]+\\.)?comix\\.to[^\\"[:space:]]*|'"$COMIX"'|g'"
       fi
       eval "$content_cmd | wp post update $POST_ID -"
+      # Posts made before Comix was added have no comix.to link to replace: add one after the last "Online Reader (...)" link
+      if [ -n "$COMIX" ] && ! wp post get $POST_ID --field=content | grep -q 'comix\\.to'; then
+        wp post get $POST_ID --field=content | awk -v url="$COMIX" '{{ lines[NR]=$0; if ($0 ~ /Online Reader \\(/ && $0 ~ /<\\/a>/) last=NR }} END {{ for (i=1; i<=NR; i++) {{ print lines[i]; if (i==last) print "<a href=\\"" url "\\">Online Reader (Comix)</a>" }} }}' | wp post update $POST_ID -
+        echo "REMOTE_COMIX_LINK_ADDED"
+      fi
       echo "REMOTE_POST_UPDATED"
 
       if [ -n "$PAGE_ID" ] && [ -n "$MEGA" ]; then

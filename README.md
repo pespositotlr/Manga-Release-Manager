@@ -149,7 +149,7 @@ Rather than matching on link text labels, the script identifies existing links b
 - URLs containing `mangadex.org` → replaced with the new MangaDex link
 - URLs containing `mangadot.net` → replaced with the new MangaDot link
 - URLs containing `mangataro.org` → replaced with the new Mangataro link
-- URLs containing `comix.to` → replaced with the new Comix link
+- URLs containing `comix.to` → replaced with the new Comix link. If the post has no comix.to link yet, an `Online Reader (Comix)` link is added after its last `Online Reader (...)` link
 
 This means your WordPress post just needs to have existing links to those domains — the link text/label can be anything you like.
 
