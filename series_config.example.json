@@ -8,6 +8,7 @@
     "mangadex_uploader": "C:\\path\\to\\Mangadex-Scheduled-Uploader",
     "mangataro_uploader": "C:\\path\\to\\Mangataro-Scheduled-Uploader",
     "mangadot_uploader": "C:\\path\\to\\MangaDot-Uploader",
+    "comix_uploader": "C:\\path\\to\\Comix-Uploader",
     "auto_kaguya": "C:\\path\\to\\auto-kaguya"
   },
   "upload_credentials": {

@@ -1,6 +1,6 @@
 # Manga Release Manager
 
-A Python automation tool that orchestrates multi-platform manga chapter releases from a single command. Given a ZIP archive and some basic metadata, it uploads to **Catbox.moe**, **Mega.nz**, **Cubari** (via ImageChest/Kaguya), **MangaDex**, **MangaDot**, and **Mangataro** — then automatically updates the corresponding WordPress news post and downloads page with the new links.
+A Python automation tool that orchestrates multi-platform manga chapter releases from a single command. Given a ZIP archive and some basic metadata, it uploads to **Catbox.moe**, **Mega.nz**, **Cubari** (via ImageChest/Kaguya), **MangaDex**, **MangaDot**, **Mangataro**, and **Comix.to** — then automatically updates the corresponding WordPress news post and downloads page with the new links.
 
 ## Related Tools
 
@@ -9,6 +9,7 @@ This script acts as an orchestrator around several other tools. You'll need to s
 - [**Mangadex-Scheduled-Uploader**](https://github.com/pespositotlr/Mangadex-Scheduled-Uploader) — Handles MangaDex chapter uploads
 - [**Mangataro-Scheduled-Uploader**](https://github.com/pespositotlr/Mangataro-Scheduled-Uploader) — Handles Mangataro chapter uploads
 - [**MangaDot-Uploader**](https://github.com/pespositotlr/MangaDot-Uploader) — Handles MangaDot chapter uploads (requires Chrome + `pip install nodriver` for its `mode=auto` Cloudflare bypass)
+- [**Comix-Uploader**](https://github.com/pespositotlr/Comix-Uploader) — Handles comix.to chapter uploads (logs in with your Firefox comix.to cookies)
 - [**Auto-Kaguya**](https://github.com/pespositotlr/auto-kaguya) (Fork of wotakumoe/kaguya) — Uploads images to ImageChest for Cubari reader links (see note below)
 - **catbox CLI** — Must be installed and on your PATH for Catbox uploads
 - **MEGAcmd** — Must be installed and on your PATH for Mega uploads (`mega-login`, `mega-put`, `mega-export`)
@@ -63,6 +64,7 @@ Create a `series_config.json` file in the same directory as `release-updater.py`
     "mangadex_uploader": "C:\\path\\to\\Mangadex-Scheduled-Uploader",
     "mangataro_uploader": "C:\\path\\to\\Mangataro-Scheduled-Uploader",
     "mangadot_uploader": "C:\\path\\to\\MangaDot-Uploader",
+    "comix_uploader": "C:\\path\\to\\Comix-Uploader",
     "auto_kaguya": "C:\\path\\to\\kaguya"
   },
   "upload_credentials": {
@@ -75,7 +77,8 @@ Create a `series_config.json` file in the same directory as `release-updater.py`
     "cubari_base": "https://cubari.moe/read/gist/BASE64GISTID/",
     "kaguya_folder": "C:\\path\\to\\kaguya\\uploads\\My Manga Series",
     "downloads_page": "my-manga-series-downloads",
-    "mangadot_manga_id": 12345
+    "mangadot_manga_id": 12345,
+    "comix_hid": "abc12"
   }
 }
 ```
@@ -97,6 +100,7 @@ Create a `series_config.json` file in the same directory as `release-updater.py`
 | `mangadex_uploader` | Directory of your Mangadex-Scheduled-Uploader clone |
 | `mangataro_uploader` | Directory of your Mangataro-Scheduled-Uploader clone |
 | `mangadot_uploader` | Directory of your MangaDot-Uploader clone |
+| `comix_uploader` | Directory of your Comix-Uploader clone |
 | `auto_kaguya` | Directory of your Kaguya clone |
 
 **`upload_credentials`**
@@ -116,6 +120,7 @@ Create a `series_config.json` file in the same directory as `release-updater.py`
 | `kaguya_folder` | Absolute path to the folder containing chapter subfolders for Kaguya |
 | `downloads_page` | WordPress page slug for your downloads/releases archive page |
 | `mangadot_manga_id` | Numeric manga ID on mangadot.net (from its URL); omit to skip MangaDot for this series |
+| `comix_hid` | Optional. comix.to title hash id (the `abc12` in `comix.to/title/abc12-name`). If omitted, the series name is looked up in Comix-Uploader's `series.json` |
 
 ### Kaguya folder structure
 
@@ -144,6 +149,7 @@ Rather than matching on link text labels, the script identifies existing links b
 - URLs containing `mangadex.org` → replaced with the new MangaDex link
 - URLs containing `mangadot.net` → replaced with the new MangaDot link
 - URLs containing `mangataro.org` → replaced with the new Mangataro link
+- URLs containing `comix.to` → replaced with the new Comix link
 
 This means your WordPress post just needs to have existing links to those domains — the link text/label can be anything you like.
 
@@ -220,9 +226,10 @@ Safety rules:
 10. Runs **Mangadex-Scheduled-Uploader** with the series TOML, ZIP path, chapter number, volume, and title
 11. Runs **MangaDot-Uploader** with the `mangadot_manga_id`, ZIP path, chapter number, volume, and title (skipped if the series has no `mangadot_manga_id`)
 12. Runs **Mangataro-Scheduled-Uploader** with the series name, chapter number, title, and ZIP path
-13. Prints a summary box with all six URLs and saves them to `release_links.txt`
-14. SSHes into your WordPress server and updates the news post and downloads page links by matching on URL domain/extension
-15. *(If `--publish` or `--schedule-post` was passed)* publishes or schedules the post if it's a draft or pending (see "Publishing the post")
+13. Runs **Comix-Uploader** with `--reupload` and the series (`comix_hid`, or the series name from its `series.json`), ZIP path, chapter number, volume, and title. Comix uploads go through the site's review before the link is live
+14. Prints a summary box with all seven URLs and saves them to `release_links.txt`
+15. SSHes into your WordPress server and updates the news post and downloads page links by matching on URL domain/extension
+16. *(If `--publish` or `--schedule-post` was passed)* publishes or schedules the post if it's a draft or pending (see "Publishing the post")
 
 ## Output
 
@@ -235,4 +242,5 @@ CUBARI=https://cubari.moe/read/gist/BASE64/036/1/
 MANGADEX=https://mangadex.org/chapter/xxxxxxxx
 MANGADOT=https://mangadot.net/chapter/xxxxxx
 MANGATARO=https://mangataro.org/manga/my-manga/chapter-36
+COMIX=https://comix.to/title/abc12-my-manga/1234567-chapter-36
 ```

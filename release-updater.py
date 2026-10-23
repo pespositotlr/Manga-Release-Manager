@@ -28,6 +28,7 @@ COLOR_PROMPT = "\033[1;32m"
 COLOR_WORDPRESS = "\033[95m"
 COLOR_MANGATARO = "\033[96m"
 COLOR_MANGADOT = "\033[35m"
+COLOR_COMIX = "\033[34m"
 IMPORTANT_INFO = "\033[1;96m"
 
 # --- CONFIGURATION ---
@@ -429,7 +430,7 @@ def main():
         "--skip",
         nargs="+",
         type=str.lower,
-        choices=["catbox", "mega", "cubari", "mangadex", "mangadot", "mangataro", "wordpress"],
+        choices=["catbox", "mega", "cubari", "mangadex", "mangadot", "mangataro", "comix", "wordpress"],
         help="Upload targets to skip"
     )
     parser.add_argument("--post-title", type=str, help="WordPress Post Title")
@@ -794,6 +795,42 @@ def main():
         print(color_text("Skipping Mangataro upload.", COLOR_MANGATARO))
         mt_url = ""
 
+    # 10. COMIX
+    if "comix" not in skip_targets:
+        print(color_text("Uploading to Comix...", COLOR_COMIX))
+        # comix_hid in series_config.json wins; otherwise the series name is looked up in Comix-Uploader's series.json
+        comix_hid = series_data.get("comix_hid")
+        comix_target = f'--manga {comix_hid}' if comix_hid else f'--series "{series}"'
+        comix_cmd = f'py -u comix-upload.py {comix_target} --zip "{file_path}" --chapter {chapter} --title "{chapter_name}" --reupload'
+        if volume:
+            comix_cmd += f' --volume {volume}'
+        print(color_text(comix_cmd, COLOR_COMIX))
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        comix_result = run_cmd_stream(
+            comix_cmd,
+            cwd=uploader_locations["comix_uploader"],
+            env=env,
+            shell=True,
+            color=COLOR_COMIX,
+            timeout=1800
+        )
+
+        print(color_text(f"Comix: Return Code: {comix_result.returncode}", COLOR_COMIX))
+
+        comix_url = ""
+        for line in comix_result.stdout.splitlines():
+            if line.startswith("FINAL_URL:"):
+                comix_url = normalize_url(line.split("FINAL_URL:")[1].strip())
+                break
+        if comix_url:
+            print(color_text("Comix uploads wait for review; the link works once it's approved.", COLOR_COMIX))
+    else:
+        print(color_text("Skipping Comix upload.", COLOR_COMIX))
+        comix_url = ""
+    print(boxed_url("Comix", comix_url, COLOR_COMIX))
+
     print(boxed_section(
         "ALL LINKS",
         [
@@ -802,7 +839,8 @@ def main():
             f"Cubari: {cubari_url}",
             f"MangaDex: {md_url}",
             f"MangaDot: {mangadot_url}",
-            f"MangaTaro: {mt_url}"
+            f"MangaTaro: {mt_url}",
+            f"Comix: {comix_url}"
         ],
         COLOR_CATBOX
     ))
@@ -814,7 +852,8 @@ def main():
         "CUBARI": cubari_url,
         "MANGADEX": md_url,
         "MANGADOT": mangadot_url,
-        "MANGATARO": mt_url
+        "MANGATARO": mt_url,
+        "COMIX": comix_url
     }
     save_release_links(links)
     print(color_text("Saved release links to release_links.txt", COLOR_PROMPT))
@@ -841,7 +880,8 @@ def main():
       MANGADEX="{md_url}"
       MANGADOT="{mangadot_url}"
       MANGATARO="{mt_url}"
-      
+      COMIX="{comix_url}"
+
       POST_TITLE="{post_title}"
       PAGE_SLUG="{downloads_page}"
       CHAPTER="{chapter}"
@@ -871,6 +911,9 @@ def main():
       fi
       if [ -n "$MANGATARO" ]; then
         content_cmd="$content_cmd | sed -E 's|https?://([^.]+\\.)?mangataro\\.org[^\\"[:space:]]*|'"$MANGATARO"'|g'"
+      fi
+      if [ -n "$COMIX" ]; then
+        content_cmd="$content_cmd | sed -E 's|https?://([^.]+\\.)?comix\\.to[^\\"[:space:]]*|'"$COMIX"'|g'"
       fi
       eval "$content_cmd | wp post update $POST_ID -"
       echo "REMOTE_POST_UPDATED"
