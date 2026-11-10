@@ -485,6 +485,14 @@ def main():
     volume = args.volume if args.volume else input(color_text("Enter Volume Number (optional): ", COLOR_PROMPT)).strip()
     chapter_name = args.chapter_name if args.chapter_name else input(color_text("Enter Chapter Name (leave blank to auto-fetch): ", COLOR_PROMPT)).strip()
 
+    # A full-volume zip never goes to Comix (it would replace the chapter there with the whole volume).
+    # Volume zip = a Mega line that skips every chapter reader, or a zip named "..._Volume_...".
+    readers = {"cubari", "mangadex", "mangadot", "mangataro"}
+    is_volume_zip = (readers <= skip_targets and "mega" not in skip_targets) or re.search(r"volume", os.path.basename(file_path), re.I)
+    if is_volume_zip and "comix" not in skip_targets:
+        print(color_text("Full-volume zip: skipping Comix.", IMPORTANT_INFO))
+        skip_targets.add("comix")
+
     # 2. Setup Configuration
     with open('series_config.json', 'r') as f:
         config = json.load(f)
@@ -539,27 +547,32 @@ def main():
         else:
             print(color_text("Chapter title could not be extracted.", IMPORTANT_INFO))
         
-    # Delete existing contents
-    for item in os.listdir(target_path):
-        item_path = os.path.join(target_path, item)
-        if os.path.isdir(item_path):
-            shutil.rmtree(item_path)
-        else:
-            os.remove(item_path)
-    print(color_text(f"Old Kaguya folder contents deleted successfully.", IMPORTANT_INFO))
-            
-    # Extract zip directly into target_path
-    with zipfile.ZipFile(file_path, 'r') as zip_ref:
-        # This iterates through files and extracts them to the root of target_path
-        for member in zip_ref.namelist():
-            # Get the filename only (stripping existing sub-folders in the zip)
-            filename = os.path.basename(member)
-            if filename: # Ignore directory entries in the zip
-                source = zip_ref.open(member)
-                target = open(os.path.join(target_path, filename), "wb")
-                with source, target:
-                    shutil.copyfileobj(source, target)
-    print(color_text(f"Kaguya folder contents updated successfully.", IMPORTANT_INFO))
+    # Only Cubari reads the Kaguya folder (every other uploader takes the zip), so leave it alone
+    # when Cubari is skipped. Otherwise a full-volume Mega line fills the chapter's folder with the whole volume.
+    if "cubari" in skip_targets:
+        print(color_text("Cubari skipped: Kaguya folder left unchanged.", IMPORTANT_INFO))
+    else:
+        # Delete existing contents
+        for item in os.listdir(target_path):
+            item_path = os.path.join(target_path, item)
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            else:
+                os.remove(item_path)
+        print(color_text(f"Old Kaguya folder contents deleted successfully.", IMPORTANT_INFO))
+
+        # Extract zip directly into target_path
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            # This iterates through files and extracts them to the root of target_path
+            for member in zip_ref.namelist():
+                # Get the filename only (stripping existing sub-folders in the zip)
+                filename = os.path.basename(member)
+                if filename: # Ignore directory entries in the zip
+                    source = zip_ref.open(member)
+                    target = open(os.path.join(target_path, filename), "wb")
+                    with source, target:
+                        shutil.copyfileobj(source, target)
+        print(color_text(f"Kaguya folder contents updated successfully.", IMPORTANT_INFO))
     
     # 4. Get index
     folder_idx = get_folder_index(base_path, target_folder)
