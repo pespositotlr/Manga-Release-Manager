@@ -23,3 +23,6 @@ release_links.txt
 
 # local backups (may contain credentials)
 *.bak_*
+
+# Downloads-page backups made before each update (page content)
+downloads_backups/

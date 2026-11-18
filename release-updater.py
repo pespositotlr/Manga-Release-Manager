@@ -319,6 +319,68 @@ def parse_post_time(when_str):
         return None
     return local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
+CHAPTER_LINK_RE = re.compile(r'<a href="[^"]*">Chapter\s*(\d+(?:\.\d+)?)</a>')
+
+
+def downloads_page_with_chapter(content, chapter, url):
+    """Return (new_content, action) for a Downloads page with a "Chapter N" link list.
+    action: "replaced" (the chapter's link already existed), "added" (a new line after the highest
+    earlier chapter, e.g. under "Uncollected Magazine Chapters:"), "unchanged" (already this url),
+    or "no-list" (no earlier "Chapter N" link to add after; such pages are left alone)."""
+    try:
+        num = float(str(chapter).strip())
+    except ValueError:
+        return content, "no-list"
+    label = format(num, "g")  # "042" -> "42", "10.5" stays
+    new_link = f'<a href="{url}">Chapter {label}</a>'
+    matches = list(CHAPTER_LINK_RE.finditer(content))
+    same = [m for m in matches if float(m.group(1)) == num]
+    if same:
+        out = content
+        for m in reversed(same):
+            out = out[:m.start()] + new_link + out[m.end():]
+        return out, ("unchanged" if out == content else "replaced")
+    earlier = [m for m in matches if float(m.group(1)) < num]
+    if not earlier:
+        return content, "no-list"
+    top = max(float(m.group(1)) for m in earlier)
+    after = [m for m in earlier if float(m.group(1)) == top][-1]
+    return content[:after.end()] + "\n" + new_link + content[after.end():], "added"
+
+
+def update_downloads_page(ssh_cfg, page_slug, chapter, mega_url):
+    """Put this chapter's Mega link on the series' Downloads page: swap the link if the chapter is
+    listed, otherwise add a new "Chapter N" line after the highest earlier chapter. The old page is
+    backed up in downloads_backups/ first, and the result is read back to check it."""
+    ssh = ["ssh", "-o", "BatchMode=yes", "-i", ssh_cfg["key_path"], f"{ssh_cfg['user']}@{ssh_cfg['host']}"]
+
+    def wp(cmd, data=None):
+        r = subprocess.run(ssh + [f"cd public_html; {cmd}"], input=data, capture_output=True,
+                           text=True, encoding="utf-8")
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or f"exit {r.returncode}")
+        return r.stdout
+
+    page_id = wp(f"wp post list --post_type=page --name={shlex.quote(page_slug)} --format=ids").strip()
+    if not page_id:
+        return f"❌WordPress RELEASE PAGE update skipped: page slug '{page_slug}' not found."
+    content = wp(f"wp post get {page_id} --field=content")
+    content = content[:-1] if content.endswith("\n") else content
+    new, action = downloads_page_with_chapter(content, chapter, mega_url)
+    if action == "no-list":
+        return f"ℹ️WordPress RELEASE PAGE: no chapter list on '{page_slug}' to add Chapter {chapter} to; left alone (add it by hand if it belongs there)."
+    if action == "unchanged":
+        return f"✅WordPress RELEASE PAGE already has this Chapter {chapter} link."
+    os.makedirs("downloads_backups", exist_ok=True)
+    backup = os.path.join("downloads_backups", f"{page_slug}-{datetime.now():%Y%m%d-%H%M%S}.html")
+    with open(backup, "w", encoding="utf-8", newline="") as f:
+        f.write(content)
+    wp(f"wp post update {page_id} -", data=new)
+    if f'<a href="{mega_url}">Chapter' not in wp(f"wp post get {page_id} --field=content"):
+        return f"❌WordPress RELEASE PAGE update did not stick (Chapter {chapter}); backup in {backup}."
+    return f"✅WordPress RELEASE PAGE update completed: Chapter {chapter} {action} (backup {backup})."
+
+
 def publish_post(ssh_cfg, post_title, schedule_gmt=None):
     """
     Publishes the WordPress post with this exact title, or with schedule_gmt (UTC "YYYY-MM-DD HH:MM:SS")
@@ -935,15 +997,7 @@ def main():
         echo "REMOTE_COMIX_LINK_ADDED"
       fi
       echo "REMOTE_POST_UPDATED"
-
-      if [ -n "$PAGE_ID" ] && [ -n "$MEGA" ]; then
-        wp post get $PAGE_ID --field=content | sed -E "s|<a href=\\\"[^\\\"]*\\\">Chapter[[:space:]]*$CHAPTER</a>|<a href=\\\"$MEGA\\\">Chapter $CHAPTER</a>|g" | wp post update $PAGE_ID -
-        echo "REMOTE_PAGE_UPDATED"
-      elif [ -n "$PAGE_ID" ]; then
-        echo "Warning: Mega URL not available; release page update skipped."
-      else
-        echo "Warning: Could not find page with slug '$PAGE_SLUG'"
-      fi
+      # The Downloads page is done afterwards in Python (update_downloads_page), which can also add a new chapter line.
     """
     
     # Strip any stray \r characters from the script string
@@ -975,12 +1029,15 @@ def main():
         else:
             print(color_text("⚠️WordPress NEWS POST update completed, but no remote success marker was found.", COLOR_WORDPRESS))
 
-        if "REMOTE_PAGE_UPDATED" in stdout:
-            print(color_text("✅WordPress RELEASE PAGE update completed.", COLOR_WORDPRESS))
-        elif "Warning: Could not find page with slug" in stdout:
-            print(color_text("❌WordPress RELEASE PAGE update skipped: page slug not found.", COLOR_WORDPRESS))
+        if not downloads_page:
+            print(color_text("⚠️WordPress RELEASE PAGE skipped: no downloads_page in series_config.json.", COLOR_WORDPRESS))
+        elif not mega_url:
+            print(color_text("⚠️WordPress RELEASE PAGE skipped: Mega URL not available.", COLOR_WORDPRESS))
         else:
-            print(color_text("⚠️WordPress RELEASE PAGE update completed, but no remote marker was found.", COLOR_WORDPRESS))
+            try:
+                print(color_text(update_downloads_page(ssh_cfg, downloads_page, chapter, mega_url), COLOR_WORDPRESS))
+            except Exception as e:
+                print(color_text(f"❌WordPress RELEASE PAGE update failed: {e}", COLOR_WORDPRESS))
     else:
         print(color_text("WordPress update failed!", COLOR_WORDPRESS))
         print(color_text("WordPress update stderr:", COLOR_WORDPRESS))
